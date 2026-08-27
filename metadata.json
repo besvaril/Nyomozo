@@ -1,0 +1,6 @@
+{
+  "name": "Biológiai nyomozó",
+  "description": "Interaktív biológiai nyomozós játék az élőlények három csoportjának (Állatok, Virágos növények, Gombák) tulajdonságainak és Venn-diagramos összehasonlításának feltárására.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
