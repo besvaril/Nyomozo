@@ -169,8 +169,20 @@ CREATE POLICY "Allow public insert on task_scores" ON public.task_scores FOR INS
                 <h2 className="text-base sm:text-lg font-bold text-white">
                   Supabase Felhő Adatbázis & Eredmények
                 </h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  Élő Kapcsolat
+                <span
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                    connectionStatus === 'connected'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : connectionStatus === 'testing'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {connectionStatus === 'connected'
+                    ? '● Élő Kapcsolat'
+                    : connectionStatus === 'testing'
+                    ? '○ Kapcsolódás...'
+                    : '⚠ Helyi Mód'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
