@@ -1,41 +1,55 @@
-import React, { useState } from 'react';
-import { GameMode } from './types';
+import React, { useState, useEffect } from 'react';
+import { GameMode, UserRole, BiologicalClue } from './types';
 import { WORKSHEET_CLUES, EXTENDED_CLUES } from './data/clues';
 import { LabHeader } from './components/LabHeader';
+import { EmergencyHomeView } from './components/EmergencyHomeView';
 import { DetectiveHandbook } from './components/DetectiveHandbook';
 import { SpeedQuizMode } from './components/SpeedQuizMode';
 import { DetectiveProfileModal } from './components/DetectiveProfileModal';
-import { StoryIntroModal } from './components/StoryIntroModal';
+import { DatabaseModal } from './components/DatabaseModal';
 import { BiologyBackground } from './components/BiologyBackground';
-import {
-  isSoundEnabled,
-  setSoundEnabled,
-} from './utils/audio';
+import { isSoundEnabled, setSoundEnabled } from './utils/audio';
+import { getOrCreateUserProfile, getUserStats } from './lib/storage';
 
-const STORAGE_NAME_KEY = 'biologiai_nyomozo_nev';
+// Deduplicated master list of all unique biological clues
+const ALL_UNIQUE_CLUES: BiologicalClue[] = (() => {
+  const seenIds = new Set<number>();
+  const seenTexts = new Set<string>();
+  const list: BiologicalClue[] = [];
+
+  for (const clue of [...WORKSHEET_CLUES, ...EXTENDED_CLUES]) {
+    const textKey = clue.text.trim().toLowerCase();
+    if (!seenIds.has(clue.id) && !seenTexts.has(textKey)) {
+      seenIds.add(clue.id);
+      seenTexts.add(textKey);
+      list.push(clue);
+    }
+  }
+  return list;
+})();
 
 export default function App() {
-  const [currentMode, setCurrentMode] = useState<GameMode>('speed_scanner');
+  const [currentMode, setCurrentMode] = useState<GameMode>('home');
   const [soundOn, setSoundOn] = useState<boolean>(isSoundEnabled());
-  const [detectiveName, setDetectiveName] = useState<string>(() => {
-    try {
-      return localStorage.getItem(STORAGE_NAME_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(() => {
-    try {
-      return !localStorage.getItem(STORAGE_NAME_KEY);
-    } catch {
-      return true;
-    }
-  });
-  const [showStoryIntro, setShowStoryIntro] = useState<boolean>(false);
+  const [detectiveName, setDetectiveName] = useState<string>('');
+  const [userRole, setUserRole] = useState<UserRole>('detective');
+  const [classCode, setClassCode] = useState<string>('');
+  const [userTotalScore, setUserTotalScore] = useState<number>(0);
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showDatabaseModal, setShowDatabaseModal] = useState<boolean>(false);
   const [resetKey, setResetKey] = useState<number>(0);
 
-  // All clues for the rapid scanner
-  const allClues = [...WORKSHEET_CLUES, ...EXTENDED_CLUES];
+  // All unique clues for the rapid scanner
+  const allClues = ALL_UNIQUE_CLUES;
+
+  // Fetch student stats when username or role changes
+  useEffect(() => {
+    if (detectiveName.trim()) {
+      getUserStats(detectiveName.trim()).then((stats) => {
+        setUserTotalScore(stats.totalScore);
+      });
+    }
+  }, [detectiveName, resetKey]);
 
   // Audio toggle
   const handleToggleSound = () => {
@@ -44,14 +58,29 @@ export default function App() {
     setSoundEnabled(nextState);
   };
 
-  // Save profile and start
-  const handleSaveProfileAndStart = (name: string) => {
-    setDetectiveName(name);
-    try {
-      localStorage.setItem(STORAGE_NAME_KEY, name);
-    } catch {
-      // ignore
+  // Save profile and start (Directly in Supabase)
+  const handleSaveProfileAndStart = async (
+    name: string,
+    role: UserRole,
+    classCodeInput?: string
+  ) => {
+    const trimmed = name.trim();
+    setDetectiveName(trimmed);
+    setUserRole(role);
+    if (classCodeInput !== undefined) {
+      setClassCode(classCodeInput);
     }
+
+    // Save/fetch profile directly in Supabase
+    try {
+      const profile = await getOrCreateUserProfile(trimmed, role, classCodeInput);
+      if (typeof profile.total_score === 'number') {
+        setUserTotalScore(profile.total_score);
+      }
+    } catch (err) {
+      console.warn('Supabase sync warning:', err);
+    }
+
     setShowProfileModal(false);
     setCurrentMode('speed_scanner');
   };
@@ -64,6 +93,10 @@ export default function App() {
   // Reset current scanner session
   const handleReset = () => {
     setResetKey((prev) => prev + 1);
+  };
+
+  const handleScoreUpdated = (newTotalScore: number) => {
+    setUserTotalScore(newTotalScore);
   };
 
   return (
@@ -79,22 +112,42 @@ export default function App() {
           soundOn={soundOn}
           onToggleSound={handleToggleSound}
           onReset={handleReset}
-          onOpenStory={() => setShowStoryIntro(true)}
-          onOpenProfile={() => setShowProfileModal(true)}
+          onOpenStory={() => setCurrentMode('home')}
+          onOpenProfile={() => setCurrentMode('home')}
+          onOpenDatabase={() => setShowDatabaseModal(true)}
           detectiveName={detectiveName}
+          userRole={userRole}
+          userTotalScore={userTotalScore}
           solvedCount={allClues.length}
           totalCount={allClues.length}
+          score={userTotalScore}
           isSubmitted={false}
         />
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 relative z-10">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-2 sm:px-4 py-4 sm:py-6 relative z-10">
+        {currentMode === 'home' && (
+          <EmergencyHomeView
+            currentName={detectiveName}
+            currentRole={userRole}
+            currentClassCode={classCode}
+            userTotalScore={userTotalScore}
+            onSaveAndStart={handleSaveProfileAndStart}
+            onOpenDatabase={() => setShowDatabaseModal(true)}
+          />
+        )}
+
         {currentMode === 'speed_scanner' && (
           <SpeedQuizMode
             key={resetKey}
             clues={allClues}
             detectiveName={detectiveName}
+            userRole={userRole}
+            classCode={classCode}
+            userTotalScore={userTotalScore}
+            onScoreUpdated={handleScoreUpdated}
+            onOpenDatabase={() => setShowDatabaseModal(true)}
           />
         )}
 
@@ -104,21 +157,35 @@ export default function App() {
       {/* Footer */}
       <footer className="relative z-10 border-t border-slate-800/80 bg-[#0a0f1e]/80 backdrop-blur-md py-4 text-center text-xs text-slate-400">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            „Biológiai nyomozó” • Gyors Laboratóriumi Szkenner
-          </span>
-          <span className="text-slate-400 font-mono text-[11px]">
-            Állatok (Animalia) ∩ Virágos növények (Plantae) ∩ Gombák (Fungi)
-          </span>
+            <span>„Biológiai nyomozó” • Supabase PostgreSQL Integráció</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowDatabaseModal(true)}
+              className="text-cyan-400 hover:text-cyan-300 underline font-mono text-[11px] cursor-pointer"
+            >
+              Supabase SQL Kód & Ranglista megtekintése
+            </button>
+            <span className="text-slate-500 font-mono text-[11px]">
+              Állatok ∩ Növények ∩ Gombák
+            </span>
+          </div>
         </div>
       </footer>
 
-      {/* Detective Profile Modal (Required before starting) */}
+      {/* Unified Emergency Briefing & Detective Profile Starting Screen */}
       <DetectiveProfileModal
         isOpen={showProfileModal}
         currentName={detectiveName}
+        currentRole={userRole}
+        currentClassCode={classCode}
         onSaveAndStart={handleSaveProfileAndStart}
+        onOpenDatabase={() => {
+          setShowProfileModal(false);
+          setShowDatabaseModal(true);
+        }}
         onClose={() => {
           if (detectiveName.trim()) {
             setShowProfileModal(false);
@@ -126,14 +193,13 @@ export default function App() {
         }}
       />
 
-      {/* Story Introduction Modal (Emergency Alert) */}
-      <StoryIntroModal
-        isOpen={showStoryIntro}
-        onClose={() => setShowStoryIntro(false)}
-        onStartGame={() => {
-          setShowStoryIntro(false);
-          setCurrentMode('speed_scanner');
-        }}
+      {/* Supabase Database & Leaderboard Modal */}
+      <DatabaseModal
+        isOpen={showDatabaseModal}
+        onClose={() => setShowDatabaseModal(false)}
+        currentUsername={detectiveName}
+        currentRole={userRole}
+        currentClassCode={classCode}
       />
     </div>
   );
