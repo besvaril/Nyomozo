@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { GameMode, UserRole, BiologicalClue } from './types';
 import { WORKSHEET_CLUES, EXTENDED_CLUES } from './data/clues';
-import { LabHeader } from './components/LabHeader';
 import { EmergencyHomeView } from './components/EmergencyHomeView';
 import { DetectiveHandbook } from './components/DetectiveHandbook';
 import { SpeedQuizMode } from './components/SpeedQuizMode';
 import { DetectiveProfileModal } from './components/DetectiveProfileModal';
 import { DatabaseModal } from './components/DatabaseModal';
 import { BiologyBackground } from './components/BiologyBackground';
-import { isSoundEnabled, setSoundEnabled } from './utils/audio';
 import { getOrCreateUserProfile, getUserStats } from './lib/storage';
 
 // Deduplicated master list of all unique biological clues
@@ -30,7 +28,6 @@ const ALL_UNIQUE_CLUES: BiologicalClue[] = (() => {
 
 export default function App() {
   const [currentMode, setCurrentMode] = useState<GameMode>('home');
-  const [soundOn, setSoundOn] = useState<boolean>(isSoundEnabled());
   const [detectiveName, setDetectiveName] = useState<string>('');
   const [userRole, setUserRole] = useState<UserRole>('detective');
   const [classCode, setClassCode] = useState<string>('');
@@ -50,13 +47,6 @@ export default function App() {
       });
     }
   }, [detectiveName, resetKey]);
-
-  // Audio toggle
-  const handleToggleSound = () => {
-    const nextState = !soundOn;
-    setSoundOn(nextState);
-    setSoundEnabled(nextState);
-  };
 
   // Save profile and start (Directly in Supabase)
   const handleSaveProfileAndStart = async (
@@ -85,16 +75,6 @@ export default function App() {
     setCurrentMode('speed_scanner');
   };
 
-  // Switch game mode
-  const handleSelectMode = (mode: GameMode) => {
-    setCurrentMode(mode);
-  };
-
-  // Reset current scanner session
-  const handleReset = () => {
-    setResetKey((prev) => prev + 1);
-  };
-
   const handleScoreUpdated = (newTotalScore: number) => {
     setUserTotalScore(newTotalScore);
   };
@@ -103,27 +83,6 @@ export default function App() {
     <div className="min-h-screen bg-[#05070a] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950 relative overflow-x-hidden">
       {/* Biological Laboratory Schematics & Ambient Background */}
       <BiologyBackground />
-
-      {/* Top Header */}
-      <div className="relative z-10">
-        <LabHeader
-          currentMode={currentMode}
-          onSelectMode={handleSelectMode}
-          soundOn={soundOn}
-          onToggleSound={handleToggleSound}
-          onReset={handleReset}
-          onOpenStory={() => setCurrentMode('home')}
-          onOpenProfile={() => setCurrentMode('home')}
-          onOpenDatabase={() => setShowDatabaseModal(true)}
-          detectiveName={detectiveName}
-          userRole={userRole}
-          userTotalScore={userTotalScore}
-          solvedCount={allClues.length}
-          totalCount={allClues.length}
-          score={userTotalScore}
-          isSubmitted={false}
-        />
-      </div>
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-2 sm:px-4 py-4 sm:py-6 relative z-10">
@@ -148,6 +107,7 @@ export default function App() {
             userTotalScore={userTotalScore}
             onScoreUpdated={handleScoreUpdated}
             onOpenDatabase={() => setShowDatabaseModal(true)}
+            onGoHome={() => setCurrentMode('home')}
           />
         )}
 

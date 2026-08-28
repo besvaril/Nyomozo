@@ -14,9 +14,11 @@ import {
   ArrowRight,
   Award,
   Sparkles,
+  Home,
+  Database,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { saveTaskScore, saveGameSession } from '../lib/storage';
+import { saveTaskScore, saveGameSession, fetchLeaderboard } from '../lib/storage';
 
 interface SpeedQuizModeProps {
   clues: BiologicalClue[];
@@ -26,6 +28,7 @@ interface SpeedQuizModeProps {
   userTotalScore?: number;
   onScoreUpdated?: (newTotalScore: number) => void;
   onOpenDatabase?: () => void;
+  onGoHome?: () => void;
   onFinish?: () => void;
 }
 
@@ -37,6 +40,7 @@ export const SpeedQuizMode: React.FC<SpeedQuizModeProps> = ({
   userTotalScore = 0,
   onScoreUpdated,
   onOpenDatabase,
+  onGoHome,
   onFinish,
 }) => {
   const [shuffledClues, setShuffledClues] = useState<BiologicalClue[]>([]);
@@ -52,6 +56,8 @@ export const SpeedQuizMode: React.FC<SpeedQuizModeProps> = ({
   const [isFinished, setIsFinished] = useState(false);
   const [lastAwardedPoints, setLastAwardedPoints] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string>(() => `sess-${Date.now()}`);
+  const [leaderboardList, setLeaderboardList] = useState<any[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState<boolean>(false);
 
   const startTimeRef = useRef<number>(Date.now());
   const hasInitializedRef = useRef<boolean>(false);
@@ -207,19 +213,29 @@ export const SpeedQuizMode: React.FC<SpeedQuizModeProps> = ({
       const totalTimeSpentSeconds = Math.round((Date.now() - startTimeRef.current) / 1000);
 
       // Save complete game session to Supabase database
-      await saveGameSession({
-        username: detectiveName,
-        role: (userRole || 'detective') as UserRole,
-        class_code: classCode,
-        total_score: correctCount,
-        correct_count: correctCount,
-        wrong_count: wrongCount,
-        accuracy_percentage: Number(accuracy.toFixed(2)),
-        max_streak: maxStreak,
-        rank_achieved: rank.title,
-        completion_time_seconds: totalTimeSpentSeconds,
-        created_at: new Date().toISOString(),
-      });
+      setIsLoadingLeaderboard(true);
+      try {
+        await saveGameSession({
+          username: detectiveName,
+          role: (userRole || 'detective') as UserRole,
+          class_code: classCode,
+          total_score: correctCount,
+          correct_count: correctCount,
+          wrong_count: wrongCount,
+          accuracy_percentage: Number(accuracy.toFixed(2)),
+          max_streak: maxStreak,
+          rank_achieved: rank.title,
+          completion_time_seconds: totalTimeSpentSeconds,
+          created_at: new Date().toISOString(),
+        });
+
+        const freshLeaderboard = await fetchLeaderboard();
+        setLeaderboardList(freshLeaderboard || []);
+      } catch (err) {
+        console.error('Failed to save session or load leaderboard:', err);
+      } finally {
+        setIsLoadingLeaderboard(false);
+      }
 
       if (correctCount >= 11) {
         try {
@@ -266,6 +282,30 @@ export const SpeedQuizMode: React.FC<SpeedQuizModeProps> = ({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Home Button */}
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Vissza a kezdőlapra"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Kezdőlap</span>
+            </button>
+          )}
+
+          {/* Database Button */}
+          {onOpenDatabase && (
+            <button
+              onClick={onOpenDatabase}
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Supabase Ranglista & Eredmények"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Ranglista</span>
+            </button>
+          )}
+
           {/* Streak */}
           <div className="flex items-center gap-1.5 bg-[#05070a] px-3 py-1.5 rounded-xl border border-slate-700/80 text-xs font-bold text-amber-400 shadow-sm">
             <Flame className="w-4 h-4 text-orange-500 animate-bounce" />
@@ -459,9 +499,93 @@ export const SpeedQuizMode: React.FC<SpeedQuizModeProps> = ({
             </div>
           </div>
 
+          {/* Embedded Supabase Leaderboard Table */}
+          <div className="text-left bg-[#05070a] border border-slate-800 rounded-2xl p-4 sm:p-5 max-w-xl mx-auto space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <h4 className="text-sm font-bold text-white">Élő Supabase Diák Rangsor (Top 5)</h4>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                {isLoadingLeaderboard ? 'Frissítés...' : 'Valós idejű adatok'}
+              </span>
+            </div>
+
+            {isLoadingLeaderboard ? (
+              <div className="py-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>Rangsor frissítése a Supabase felhőből...</span>
+              </div>
+            ) : leaderboardList.length === 0 ? (
+              <div className="py-4 text-center text-xs text-slate-500">
+                Még nem érkezett más eredmény.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-800/80 rounded-xl border border-slate-800/80 overflow-hidden">
+                {leaderboardList.slice(0, 5).map((item, idx) => {
+                  const isCurrent = item.username?.toLowerCase() === detectiveName?.toLowerCase();
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 sm:p-3 flex items-center justify-between text-xs transition-colors ${
+                        isCurrent
+                          ? 'bg-emerald-950/40 border-l-2 border-emerald-400 font-bold'
+                          : 'bg-[#080c18] hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`w-6 h-6 rounded-md flex items-center justify-center font-mono font-bold text-[11px] ${
+                            idx === 0
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : idx === 1
+                              ? 'bg-slate-300/20 text-slate-200 border border-slate-400/40'
+                              : idx === 2
+                              ? 'bg-amber-700/20 text-amber-400 border border-amber-600/40'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          #{idx + 1}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={isCurrent ? 'text-emerald-300' : 'text-white'}>
+                              {item.username}
+                            </span>
+                            {item.class_code && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 font-mono">
+                                {item.class_code}
+                              </span>
+                            )}
+                          </div>
+                          {item.rank_achieved && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              {item.rank_achieved}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-mono font-black text-sm text-emerald-400">
+                        {item.total_score || 0} pont
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button
-              onClick={startNewGame}
+              onClick={() => {
+                if (onGoHome) {
+                  onGoHome();
+                } else if (onFinish) {
+                  onFinish();
+                } else {
+                  startNewGame();
+                }
+              }}
               className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 text-slate-950 font-bold text-sm inline-flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />

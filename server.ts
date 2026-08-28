@@ -3,7 +3,17 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://jcofukpxhezhvzaonfxe.supabase.co";
+function sanitizeSupabaseUrl(url?: string): string {
+  if (!url) return "https://jcofukpxhezhvzaonfxe.supabase.co";
+  const trimmed = url.trim();
+  const match = trimmed.match(/dashboard\/project\/([a-z0-9]+)/i);
+  if (match && match[1]) {
+    return `https://${match[1]}.supabase.co`;
+  }
+  return trimmed;
+}
+
+const SUPABASE_URL = sanitizeSupabaseUrl(process.env.VITE_SUPABASE_URL);
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impjb2Z1a3B4aGV6aHZ6YW9uZnhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NDE0OTAsImV4cCI6MjEwMzQxNzQ5MH0.9eHKiPncFSRKKCe7BRXr5oMkIkjNjTXh3LzZ0RUWg-o";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
